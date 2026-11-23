@@ -1,0 +1,395 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMINISTRATIVO
+  COORDINADOR
+  EDUCADOR
+  ESTUDIANTE
+  ACUDIENTE
+  JEFE_MANTENIMIENTO
+  TECNICO_MANTENIMIENTO
+}
+enum EnrollmentStatus {
+  PENDING
+  ACTIVE
+  REJECTED
+  WITHDRAWN
+}
+enum AttendanceStatus {
+  PRESENTE
+  AUSENTE
+  TARDANZA
+  JUSTIFICADO
+}
+enum MaintenanceStatus {
+  REGISTRADA
+  EN_REVISION
+  ASIGNADA
+  ESCALADA
+  EN_EJECUCION
+  CERRADA
+}
+enum MaintenanceType {
+  PREVENTIVO
+  CORRECTIVO
+}
+enum Urgency {
+  BAJA
+  MEDIA
+  ALTA
+  CRITICA
+}
+enum MaintenanceOrigin {
+  SAIA
+  CORREO
+  TELEFONO
+  INTERNO
+}
+
+model User {
+  id String @id @default(uuid())
+  name String
+  email String @unique
+  passwordHash String
+  role Role
+  active Boolean @default(true)
+  mustChangePassword Boolean @default(false)
+  mfaEnabled Boolean @default(false)
+  mfaSecret String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  auditLogs AuditLog[]
+  loginAttempts LoginAttempt[]
+  sessions AttendanceSession[]
+  evaluations Evaluation[]
+  requestedMaintenance MaintenanceRequest[] @relation("Requester")
+  assignments MaintenanceAssignment[]
+  maintenanceHistory MaintenanceHistory[]
+  evidence MaintenanceEvidence[]
+  notifications Notification[]
+  refreshTokens RefreshToken[]
+  maintenancePreventive PreventiveMaintenance[]
+  studentProfile Student?
+  guardianProfile Guardian?
+  teacherProfile Teacher?
+  recoveryTokens PasswordResetToken[]
+  settings InstitutionSetting[]
+}
+
+model Student {
+  id String @id @default(uuid())
+  firstName String
+  lastName String
+  documentType String
+  documentNumber String @unique
+  gender String?
+  birthDate DateTime?
+  email String?
+  phone String?
+  address String?
+  neighborhood String?
+  originCity String?
+  active Boolean @default(true)
+  userId String? @unique
+  createdAt DateTime @default(now())
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  enrollments Enrollment[]
+  guardians StudentGuardian[]
+  attendance Attendance[]
+  evaluations Evaluation[]
+  consents ConsentRecord[]
+  @@index([lastName, firstName])
+}
+
+model Guardian {
+  id String @id @default(uuid())
+  name String
+  documentNumber String? @unique
+  email String?
+  phone String?
+  userId String? @unique
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  students StudentGuardian[]
+}
+model StudentGuardian {
+  studentId String
+  guardianId String
+  relationship String
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  guardian Guardian @relation(fields: [guardianId], references: [id], onDelete: Cascade)
+  @@id([studentId, guardianId])
+}
+model Teacher {
+  id String @id @default(uuid())
+  name String
+  email String?
+  phone String?
+  specialty String
+  active Boolean @default(true)
+  userId String? @unique
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  groups Group[]
+}
+model Program {
+  id String @id @default(uuid())
+  name String @unique
+  description String?
+  category String
+  capacity Int?
+  minAge Int?
+  maxAge Int?
+  active Boolean @default(true)
+  createdAt DateTime @default(now())
+  groups Group[]
+  enrollments Enrollment[]
+  requirements ProgramRequirement[]
+}
+model ProgramRequirement {
+  id String @id @default(uuid())
+  description String
+  programId String
+  program Program @relation(fields: [programId], references: [id], onDelete: Cascade)
+}
+model Venue {
+  id String @id @default(uuid())
+  name String @unique
+  address String?
+  classrooms Classroom[]
+  requests MaintenanceRequest[]
+  preventiveMaintenance PreventiveMaintenance[]
+}
+model Classroom {
+  id String @id @default(uuid())
+  name String
+  capacity Int?
+  venueId String
+  venue Venue @relation(fields: [venueId], references: [id])
+  groups Group[]
+}
+model Group {
+  id String @id @default(uuid())
+  name String
+  capacity Int?
+  active Boolean @default(true)
+  programId String
+  teacherId String?
+  classroomId String?
+  program Program @relation(fields: [programId], references: [id])
+  teacher Teacher? @relation(fields: [teacherId], references: [id])
+  classroom Classroom? @relation(fields: [classroomId], references: [id])
+  schedules Schedule[]
+  students Enrollment[]
+  sessions AttendanceSession[]
+  evaluations Evaluation[]
+}
+model Schedule {
+  id String @id @default(uuid())
+  weekday Int
+  startTime String
+  endTime String
+  groupId String
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+}
+model Enrollment {
+  id String @id @default(uuid())
+  studentId String
+  programId String
+  groupId String?
+  status EnrollmentStatus @default(PENDING)
+  createdAt DateTime @default(now())
+  student Student @relation(fields: [studentId], references: [id])
+  program Program @relation(fields: [programId], references: [id])
+  group Group? @relation(fields: [groupId], references: [id])
+  @@unique([studentId, programId])
+  @@index([status, programId])
+}
+model AttendanceSession {
+  id String @id @default(uuid())
+  groupId String
+  date DateTime @db.Date
+  teacherId String
+  group Group @relation(fields: [groupId], references: [id])
+  teacher User @relation(fields: [teacherId], references: [id])
+  records Attendance[]
+  @@unique([groupId, date])
+}
+model Attendance {
+  id String @id @default(uuid())
+  sessionId String
+  studentId String
+  status AttendanceStatus
+  note String?
+  session AttendanceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id])
+  @@unique([sessionId, studentId])
+}
+model Evaluation {
+  id String @id @default(uuid())
+  studentId String
+  groupId String
+  educatorId String
+  period String
+  observations String
+  createdAt DateTime @default(now())
+  student Student @relation(fields: [studentId], references: [id])
+  group Group @relation(fields: [groupId], references: [id])
+  educator User @relation(fields: [educatorId], references: [id])
+  records EvaluationRecord[]
+}
+model EvaluationIndicator {
+  id String @id @default(uuid())
+  name String @unique
+  description String?
+  records EvaluationRecord[]
+}
+model EvaluationRecord {
+  evaluationId String
+  indicatorId String
+  observation String?
+  evaluation Evaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  indicator EvaluationIndicator @relation(fields: [indicatorId], references: [id])
+  @@id([evaluationId, indicatorId])
+}
+model Notification {
+  id String @id @default(uuid())
+  userId String
+  eventKey String? @unique
+  title String
+  body String
+  readAt DateTime?
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+model MaintenanceRequest {
+  id String @id @default(uuid())
+  number Int @unique @default(autoincrement())
+  venueId String
+  location String
+  type MaintenanceType
+  description String
+  urgency Urgency
+  origin MaintenanceOrigin @default(INTERNO)
+  status MaintenanceStatus @default(REGISTRADA)
+  requesterId String
+  destination String?
+  scheduledAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  venue Venue @relation(fields: [venueId], references: [id])
+  requester User @relation("Requester", fields: [requesterId], references: [id])
+  assignments MaintenanceAssignment[]
+  evidence MaintenanceEvidence[]
+  history MaintenanceHistory[]
+  @@index([status, urgency])
+}
+model MaintenanceAssignment {
+  id String @id @default(uuid())
+  requestId String
+  userId String
+  assignedAt DateTime @default(now())
+  request MaintenanceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+}
+model MaintenanceEvidence {
+  id String @id @default(uuid())
+  requestId String
+  uploadedById String
+  url String
+  originalName String?
+  mimeType String?
+  byteSize Int?
+  caption String?
+  createdAt DateTime @default(now())
+  request MaintenanceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  uploadedBy User @relation(fields: [uploadedById], references: [id])
+}
+model MaintenanceHistory {
+  id String @id @default(uuid())
+  requestId String
+  userId String
+  status MaintenanceStatus
+  note String?
+  createdAt DateTime @default(now())
+  request MaintenanceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+}
+model PreventiveMaintenance {
+  id String @id @default(uuid())
+  asset String
+  venueId String
+  description String
+  dueAt DateTime
+  completedAt DateTime?
+  createdAt DateTime @default(now())
+  venue Venue @relation(fields: [venueId], references: [id])
+  createdBy User? @relation(fields: [createdById], references: [id])
+  createdById String?
+  @@index([dueAt])
+}
+model AuditLog {
+  id String @id @default(uuid())
+  userId String?
+  action String
+  entity String
+  entityId String
+  createdAt DateTime @default(now())
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  @@index([entity, entityId, createdAt])
+}
+model LoginAttempt {
+  id String @id @default(uuid())
+  userId String?
+  email String
+  success Boolean
+  ipAddress String?
+  createdAt DateTime @default(now())
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  @@index([email, createdAt])
+}
+model ConsentRecord {
+  id String @id @default(uuid())
+  studentId String?
+  subjectName String
+  purpose String
+  consentedAt DateTime?
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+  student Student? @relation(fields: [studentId], references: [id], onDelete: SetNull)
+}
+model RefreshToken {
+  id String @id @default(uuid())
+  userId String
+  tokenHash String @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model PasswordResetToken {
+  id String @id @default(uuid())
+  userId String
+  tokenHash String @unique
+  expiresAt DateTime
+  usedAt DateTime?
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId, expiresAt])
+}
+
+model InstitutionSetting {
+  key String @id
+  value String
+  updatedById String?
+  updatedAt DateTime @updatedAt
+  updatedBy User? @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+}

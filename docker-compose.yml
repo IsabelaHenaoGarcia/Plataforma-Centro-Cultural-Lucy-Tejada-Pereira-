@@ -1,0 +1,59 @@
+services:
+  database:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: pgclt
+      POSTGRES_USER: pgclt
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pgclt_dev}
+    volumes:
+      - pgclt_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pgclt -d pgclt"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://pgclt:${POSTGRES_PASSWORD:-pgclt_dev}@database:5432/pgclt?schema=public
+      JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET en .env}
+      API_PORT: 4000
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8080,http://localhost:5173}
+      MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY:?Define MFA_ENCRYPTION_KEY en .env}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SEED_PASSWORD: ${SEED_PASSWORD:-Demo-PGC-LT-2026!}
+    command: ["/bin/sh", "-c", "npm --workspace backend run db:push && npm --workspace backend run db:seed && node backend/dist/server.js"]
+    depends_on:
+      database:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:4000:4000"
+    volumes:
+      - pgclt_uploads:/app/backend/uploads
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:4000/api}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "127.0.0.1:8080:80"
+
+volumes:
+  pgclt_data:
+  pgclt_uploads:
